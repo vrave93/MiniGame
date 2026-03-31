@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Fishing Prototype - Responsive Physics</title>
+    <style>
+        body { background: #111; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; user-select: none; }
+        #game-box { position: relative; width: 600px; height: 550px; background: #1a1a1a; border: 4px solid #333; border-radius: 40px; overflow: hidden; }
+
+        /* 시작 버튼 (절대 가려지지 않음) */
+        #start-layer { position: absolute; inset: 0; background: rgba(0,0,0,0.95); z-index: 1000000; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        #btn-play { padding: 30px 100px; font-size: 32px; font-weight: bold; cursor: pointer; background: #2ecc71; color: white; border: none; border-radius: 25px; box-shadow: 0 10px 0 #27ae60; }
+        #btn-play:active { transform: translateY(5px); box-shadow: 0 5px 0 #27ae60; }
+
+        /* 폭주 상태 효과 */
+        .reversal-active { box-shadow: inset 0 0 100px rgba(255, 0, 0, 0.7) !important; animation: shake 0.1s infinite; }
+        @keyframes shake { 0% { transform: translate(1px, 1px); } 50% { transform: translate(-1px, -1px); } 100% { transform: translate(1px, 1px); } }
+
+        svg.display { width: 450px; height: 250px; display: block; margin: 40px auto 0; overflow: visible; }
+        .rail { fill: none; stroke: #333; stroke-width: 22; stroke-linecap: round; }
+        #zone-calm { fill: none; stroke: #4caf50; stroke-width: 24; stroke-linecap: round; opacity: 0.4; }
+        #zone-perfect { fill: none; stroke: #fff; stroke-width: 28; stroke-linecap: butt; filter: drop-shadow(0 0 15px #fff); }
+        #ball { fill: #fff; filter: drop-shadow(0 0 10px white); }
+
+        .fish-frame { position: absolute; top: 220px; left: 50%; transform: translateX(-50%); width: 80px; height: 80px; background: rgba(255,255,255,0.05); border: 2px solid #444; border-radius: 50%; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+        #fish-icon { font-size: 45px; transform-origin: center; display: inline-block; }
+
+        /* 폭주 타이머 */
+        #debuff-ui { position: absolute; top: 120px; left: 50%; transform: translateX(-50%); text-align: center; display: none; }
+        #timer-bar { width: 180px; height: 8px; background: rgba(0,0,0,0.5); border: 1px solid #ff5252; border-radius: 4px; overflow: hidden; margin-top: 5px; }
+        #timer-fill { width: 100%; height: 100%; background: #ff5252; }
+
+        /* 하단 가이드 바 */
+        .mouse-guide-area { position: absolute; bottom: 80px; width: 450px; left: 50%; transform: translateX(-50%); height: 40px; display: flex; align-items: center; }
+        .horizontal-line { width: 100%; height: 2px; background: rgba(255,255,255,0.1); position: relative; }
+        #mouse-icon-pointer { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); font-size: 24px; filter: drop-shadow(0 0 5px white); }
+        .center-mark { position: absolute; left: 50%; top: -10px; width: 2px; height: 20px; background: #555; transform: translateX(-50%); }
+
+        .ui-area { text-align: center; margin-top: 20px; }
+        .status { font-size: 24px; font-weight: bold; margin-top: 15px; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+<div id="game-box">
+    <div id="start-layer">
+        <button id="btn-play" onclick="startGame()">나르도프 정신지배 저항 테스트</button>
+        <p style="color: #666; margin-top: 20px;">퍼펙트 존에서는 정신지배에서 더욱 빨리 벗어날 수 있습니다!</p>
+    </div>
+
+    <div id="debuff-ui">
+        <div style="color:#ff5252; font-weight:bold; font-size:14px;">멍하니 있었더니 무언가에 홀리는 것 같다!</div>
+        <div id="timer-bar"><div id="timer-fill"></div></div>
+    </div>
+
+    <div id="fish-cont" class="fish-frame"><div id="fish-icon">🐟</div></div>
+
+    <svg class="display" viewBox="0 0 400 200">
+        <path class="rail" d="M 50 180 A 150 150 0 0 1 350 180" />
+        <path id="zone-calm" d="" />
+        <path id="zone-perfect" d="" />
+        <circle id="ball" cx="200" cy="30" r="12" />
+    </svg>
+
+    <div class="mouse-guide-area">
+        <div class="horizontal-line">
+            <div class="center-mark"></div>
+            <div id="mouse-icon-pointer">🖱️</div>
+        </div>
+    </div>
+
+    <div class="ui-area">
+        <div id="gauge-container" class="gauge-wrap" style="width:400px; height:26px; background:#000; border:2px solid #555; border-radius:13px; margin:0 auto; overflow:hidden;">
+            <div id="gauge-bar" style="width: 0%; height: 100%; background: #4caf50;"></div>
+        </div>
+        <div id="status-text" class="status">TIME: 30.0s | GAUGE: 0%</div>
+    </div>
+</div>
+
+<script>
+    const CFG = {
+        TIME: 30, Z_START: 135, Z_SIZE: 20, P_SIZE: 2,
+        FILL_NORMAL: 14, FILL_PERFECT: 50, DRAIN: 12,
+        MAX_ACCEL: 700,    // [상향] 기본 반응성 강화
+        FRIC_NORMAL: 0.85, // 밖에서는 더 확실히 멈추게 함
+        FRIC_ICE: 0.998,   // 영역 안 미끄러짐 유지
+        STRUGGLE: 250,      
+        REV_CHARGE: 30, REV_FORCE: 480, REV_DUR: 3.0,
+        BRAKE_BOOST: 3.5   // [핵심] 반대 방향 조작 시 가속도 배율
+    };
+
+    let angle = 90, vel = 0, gauge = 0, timeL = CFG.TIME;
+    let isPlaying = false, lastT = 0, vX = 300, tension = 0, isReversing = false, revTimeLeft = 0;
+
+    const toPos = (a) => {
+        const r = (180 - a) * Math.PI / 180;
+        return { x: 200 + 150 * Math.cos(r), y: 180 - 150 * Math.sin(r) };
+    };
+
+    const drawArc = (id, s, sz) => {
+        const p1 = toPos(s), p2 = toPos(s + sz);
+        document.getElementById(id).setAttribute("d", `M ${p1.x} ${p1.y} A 150 150 0 0 1 ${p2.x} ${p2.y}`);
+    };
+
+    const pStart = CFG.Z_START + (CFG.Z_SIZE / 2) - (CFG.P_SIZE / 2);
+    drawArc("zone-calm", CFG.Z_START, CFG.Z_SIZE);
+    drawArc("zone-perfect", pStart, CFG.P_SIZE);
+
+    window.startGame = function() {
+        document.getElementById('start-layer').style.display = 'none';
+        isPlaying = true;
+        lastT = performance.now();
+        requestAnimationFrame(loop);
+    };
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isPlaying) return;
+        const rect = document.getElementById('game-box').getBoundingClientRect();
+        vX = Math.max(0, Math.min(600, e.clientX - rect.left));
+    });
+
+    function loop(ts) {
+        if (!isPlaying) return;
+        let dt = (ts - lastT) / 1000;
+        lastT = ts;
+        if (dt > 0.1) dt = 0.016;
+
+        const inPerfect = (angle >= pStart && angle <= pStart + CFG.P_SIZE);
+        const inCalm = (angle >= CFG.Z_START && angle <= CFG.Z_START + CFG.Z_SIZE);
+        
+        // 1. 물고기 시선 추적
+        const dx = vX - 300;
+        document.getElementById('fish-icon').style.transform = `rotate(${(vX - 300) / 8}deg)`;
+
+        // 2. 폭주 로직
+        if (!isReversing) {
+            if (!inCalm) {
+                tension += CFG.REV_CHARGE * dt;
+                if (tension >= 100) { isReversing = true; tension = 100; revTimeLeft = CFG.REV_DUR; }
+            } else { tension = Math.max(0, tension - 100 * dt); }
+        } else {
+            revTimeLeft -= dt;
+            if (revTimeLeft <= 0) { isReversing = false; tension = 0; }
+        }
+
+        // 3. [핵심 수정] 가변 물리 엔진 (브레이크 부스트 추가)
+        let currentFric = inCalm ? CFG.FRIC_ICE : CFG.FRIC_NORMAL;
+        let offset = (vX - 300) / 300; 
+        let targetAccel = Math.sign(offset) * Math.pow(Math.abs(offset), 1.5) * CFG.MAX_ACCEL;
+
+        // [카운터 스티어 로직] 현재 속도와 조작 방향이 반대라면 3.5배 강한 힘으로 멈춰세움
+        if (Math.sign(targetAccel) !== Math.sign(vel) && Math.abs(vel) > 10) {
+            targetAccel *= CFG.BRAKE_BOOST;
+        }
+
+        let struggle = inCalm ? (Math.random() - 0.5) * CFG.STRUGGLE : 0;
+        let revForce = isReversing ? ((angle > (CFG.Z_START + CFG.Z_SIZE/2)) ? 1 : -1) * CFG.REV_FORCE : 0;
+
+        vel = (vel + (targetAccel + struggle + revForce) * dt) * currentFric;
+        angle = Math.max(0, Math.min(180, angle + vel * dt));
+
+        // 4. 렌더링 및 UI
+        const pos = toPos(angle);
+        const ballEl = document.getElementById('ball');
+        ballEl.setAttribute("cx", pos.x);
+        ballEl.setAttribute("cy", pos.y);
+        document.getElementById('mouse-icon-pointer').style.left = `${(vX / 600) * 100}%`;
+
+        if (isReversing) {
+            document.getElementById('debuff-ui').style.display = 'block';
+            document.getElementById('timer-fill').style.width = (revTimeLeft / CFG.REV_DUR) * 100 + "%";
+            document.getElementById('game-box').classList.add('reversal-active');
+        } else {
+            document.getElementById('debuff-ui').style.display = 'none';
+            document.getElementById('game-box').classList.remove('reversal-active');
+        }
+
+        if (inCalm) {
+            gauge += (inPerfect ? CFG.FILL_PERFECT : CFG.FILL_NORMAL) * dt;
+            document.getElementById('gauge-container').style.boxShadow = "none";
+            ballEl.setAttribute("r", inPerfect ? "18" : "13");
+        } else {
+            gauge -= CFG.DRAIN * dt;
+            document.getElementById('gauge-container').style.boxShadow = "inset 0 0 10px red";
+            ballEl.setAttribute("r", "12");
+        }
+
+        gauge = Math.min(100, Math.max(0, gauge));
+        timeL -= dt;
+        document.getElementById('gauge-bar').style.width = gauge + "%";
+        document.getElementById('status-text').innerText = `TIME: ${Math.max(0, timeL).toFixed(1)}s | GAUGE: ${Math.floor(gauge)}%`;
+
+        if (gauge >= 100) { alert("정신지배 저항 성공!"); location.reload(); }
+        else if (timeL <= 0) { alert("정신지배 저항 실패!"); location.reload(); }
+        else requestAnimationFrame(loop);
+    }
+</script>
+</body>
+</html>
