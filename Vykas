@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>하트 바둑판 배치</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a0010;
+    font-family: 'Noto Sans KR', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 20px;
+  }
+
+  h1 {
+    color: #ff6b9d;
+    font-size: 1.4rem;
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px #ff006688;
+    font-weight: 300;
+  }
+
+  .controls {
+    display: flex;
+    gap: 32px;
+    align-items: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,100,150,0.2);
+    border-radius: 16px;
+    padding: 16px 32px;
+    backdrop-filter: blur(10px);
+  }
+
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .control-group label {
+    color: #ffaac8;
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .count-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,100,150,0.5);
+    background: rgba(255,50,100,0.15);
+    color: #ff6b9d;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .count-btn:hover {
+    background: rgba(255,50,100,0.4);
+    border-color: #ff6b9d;
+    box-shadow: 0 0 12px #ff006655;
+  }
+
+  .count-display {
+    color: #fff;
+    font-size: 1.3rem;
+    min-width: 32px;
+    text-align: center;
+    font-weight: 600;
+    text-shadow: 0 0 10px #ff6b9d88;
+  }
+
+  .divider {
+    width: 1px;
+    height: 50px;
+    background: rgba(255,100,150,0.2);
+  }
+
+  /* 그리드 컨테이너 */
+  .grid-wrapper {
+    position: relative;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,50,100,0.25);
+    border-radius: 12px;
+    padding: 4px;
+    box-shadow:
+      0 0 60px rgba(180,0,60,0.3),
+      inset 0 0 40px rgba(100,0,30,0.4);
+  }
+
+  .grid-container {
+    display: grid;
+    gap: 0;
+    position: relative;
+  }
+
+  /* 격자선 항상 표시 */
+  .grid-container::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,80,120,0.18) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,80,120,0.18) 1px, transparent 1px);
+    background-size: var(--cell-size) var(--cell-size);
+    pointer-events: none;
+    border-radius: 8px;
+    opacity: 1;
+  }
+
+  .cell {
+    width: var(--cell-size);
+    height: var(--cell-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.15s;
+  }
+
+  .cell:hover {
+    background: rgba(255,80,120,0.08);
+    border-radius: 6px;
+  }
+
+  .heart {
+    font-size: calc(var(--cell-size) * 0.52);
+    user-select: none;
+    transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s;
+    display: block;
+    line-height: 1;
+    filter: drop-shadow(0 0 6px rgba(255,80,120,0.7));
+    animation: heartFloat 3s ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
+  }
+
+  .heart.red { }
+  .heart.purple { filter: drop-shadow(0 0 6px rgba(180,80,255,0.7)); }
+
+  .cell:hover .heart {
+    transform: scale(1.25);
+    filter: drop-shadow(0 0 14px rgba(255,80,120,1));
+  }
+
+  .cell.empty .heart {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+
+  .cell:hover.empty .heart {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+
+  @keyframes heartFloat {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-3px) scale(1.04); }
+  }
+
+  @keyframes heartPop {
+    0% { transform: scale(0); opacity: 0; }
+    60% { transform: scale(1.35); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .cell.just-placed .heart {
+    animation: heartPop 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards,
+               heartFloat 3s ease-in-out 0.4s infinite;
+    animation-delay: 0s, var(--delay, 0s);
+  }
+
+  /* 하단 정보 */
+  .info-bar {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .badge {
+    background: rgba(255,50,100,0.12);
+    border: 1px solid rgba(255,80,120,0.3);
+    border-radius: 20px;
+    padding: 6px 16px;
+    color: #ffaac8;
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+  }
+
+  .badge span {
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .reset-btn {
+    background: rgba(255,50,100,0.15);
+    border: 1px solid rgba(255,80,120,0.4);
+    border-radius: 20px;
+    padding: 6px 20px;
+    color: #ff6b9d;
+    font-size: 0.8rem;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+  }
+
+  .reset-btn:hover {
+    background: rgba(255,50,100,0.35);
+    box-shadow: 0 0 16px rgba(255,0,80,0.4);
+  }
+
+  /* 배경 파티클 */
+  .bg-particles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: -1;
+  }
+
+  .particle {
+    position: absolute;
+    font-size: 1rem;
+    opacity: 0.08;
+    animation: drift linear infinite;
+  }
+
+  @keyframes drift {
+    from { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+    10% { opacity: 0.08; }
+    90% { opacity: 0.08; }
+    to { transform: translateY(-10vh) rotate(360deg); opacity: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-particles" id="bgParticles"></div>
+
+<h1>♥ 하트 배치판 ♥</h1>
+
+<div class="controls">
+  <div class="control-group">
+    <label>가로 (열)</label>
+    <div class="control-row">
+      <button class="count-btn" onclick="changeGrid('cols', -1)">−</button>
+      <span class="count-display" id="colsDisplay">8</span>
+      <button class="count-btn" onclick="changeGrid('cols', 1)">+</button>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="control-group">
+    <label>세로 (행)</label>
+    <div class="control-row">
+      <button class="count-btn" onclick="changeGrid('rows', -1)">−</button>
+      <span class="count-display" id="rowsDisplay">6</span>
+      <button class="count-btn" onclick="changeGrid('rows', 1)">+</button>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="control-group">
+    <label>하트 색상</label>
+    <div class="control-row" style="gap:12px">
+      <button class="count-btn" id="redBtn" onclick="setColor('red')" title="빨간 하트" style="font-size:1rem; background:rgba(255,50,80,0.3)">❤️</button>
+      <button class="count-btn" id="purpleBtn" onclick="setColor('purple')" title="보라 하트" style="font-size:1rem">💜</button>
+    </div>
+  </div>
+</div>
+
+<div class="grid-wrapper">
+  <div class="grid-container" id="grid"></div>
+</div>
+
+<div class="info-bar">
+  <div class="badge">배치된 하트: <span id="placedCount">0</span></div>
+  <div class="badge">빈 칸: <span id="emptyCount">48</span></div>
+  <button class="reset-btn" onclick="resetGrid()">초기화</button>
+</div>
+
+<script>
+  let rows = 6;
+  let cols = 8;
+  let selectedColor = 'red';
+  let cellData = {}; // key: "r-c", value: color or null
+  const CELL_SIZE = 72;
+
+  const heartEmoji = { red: '❤️', purple: '💜' };
+
+  function setColor(color) {
+    selectedColor = color;
+    document.getElementById('redBtn').style.background = color === 'red' ? 'rgba(255,50,80,0.5)' : 'rgba(255,50,100,0.15)';
+    document.getElementById('purpleBtn').style.background = color === 'purple' ? 'rgba(150,50,255,0.4)' : 'rgba(255,50,100,0.15)';
+  }
+
+  function changeGrid(dim, delta) {
+    if (dim === 'cols') {
+      cols = Math.max(2, Math.min(16, cols + delta));
+      document.getElementById('colsDisplay').textContent = cols;
+    } else {
+      rows = Math.max(2, Math.min(12, rows + delta));
+      document.getElementById('rowsDisplay').textContent = rows;
+    }
+    // 범위 벗어난 셀 제거
+    const newData = {};
+    for (const [key, val] of Object.entries(cellData)) {
+      const [r, c] = key.split('-').map(Number);
+      if (r < rows && c < cols) newData[key] = val;
+    }
+    cellData = newData;
+    renderGrid();
+  }
+
+  function renderGrid() {
+    const grid = document.getElementById('grid');
+    grid.style.setProperty('--cell-size', CELL_SIZE + 'px');
+    grid.style.gridTemplateColumns = `repeat(${cols}, ${CELL_SIZE}px)`;
+    grid.style.gridTemplateRows = `repeat(${rows}, ${CELL_SIZE}px)`;
+
+    grid.innerHTML = '';
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const key = `${r}-${c}`;
+        const color = cellData[key] || null;
+
+        const cell = document.createElement('div');
+        cell.className = 'cell' + (color ? '' : ' empty');
+        cell.dataset.key = key;
+
+        const delay = (r * cols + c) * 0.08;
+        cell.style.setProperty('--delay', delay + 's');
+
+        const heart = document.createElement('span');
+        heart.className = 'heart' + (color === 'purple' ? ' purple' : '');
+        heart.style.setProperty('--delay', delay + 's');
+        heart.textContent = color ? heartEmoji[color] : heartEmoji[selectedColor];
+
+        cell.appendChild(heart);
+        cell.addEventListener('click', () => toggleCell(key, cell, heart));
+        cell.addEventListener('mouseenter', () => {
+          if (cell.classList.contains('empty')) {
+            heart.textContent = heartEmoji[selectedColor];
+          }
+        });
+
+        grid.appendChild(cell);
+      }
+    }
+
+    updateInfo();
+  }
+
+  function toggleCell(key, cell, heart) {
+    cell.classList.remove('just-placed');
+    void cell.offsetWidth; // reflow for re-trigger
+
+    if (cellData[key]) {
+      // 이미 있으면 제거
+      delete cellData[key];
+      cell.classList.add('empty');
+      heart.textContent = heartEmoji[selectedColor];
+    } else {
+      // 배치
+      cellData[key] = selectedColor;
+      cell.classList.remove('empty');
+      cell.classList.add('just-placed');
+      heart.className = 'heart' + (selectedColor === 'purple' ? ' purple' : '');
+      heart.style.setProperty('--delay', '0s');
+      heart.textContent = heartEmoji[selectedColor];
+    }
+    updateInfo();
+  }
+
+  function resetGrid() {
+    cellData = {};
+    renderGrid();
+  }
+
+  function updateInfo() {
+    const total = rows * cols;
+    const placed = Object.keys(cellData).length;
+    document.getElementById('placedCount').textContent = placed;
+    document.getElementById('emptyCount').textContent = total - placed;
+  }
+
+  // 배경 파티클
+  function createParticles() {
+    const container = document.getElementById('bgParticles');
+    for (let i = 0; i < 20; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.textContent = Math.random() > 0.5 ? '❤️' : '💜';
+      p.style.left = Math.random() * 100 + '%';
+      p.style.fontSize = (0.6 + Math.random() * 1.2) + 'rem';
+      p.style.animationDuration = (8 + Math.random() * 12) + 's';
+      p.style.animationDelay = (-Math.random() * 15) + 's';
+      container.appendChild(p);
+    }
+  }
+
+  // 예시 하트 미리 배치
+  function placeExampleHearts() {
+    const examples = [
+      // 빨간 하트
+      [0,1,'red'],[0,4,'red'],[0,6,'red'],
+      [1,0,'red'],[1,3,'red'],[1,7,'red'],
+      [2,2,'red'],[2,5,'red'],
+      [3,1,'red'],[3,4,'red'],[3,6,'red'],
+      [4,0,'red'],[4,3,'red'],[4,7,'red'],
+      [5,2,'red'],[5,5,'red'],
+      // 보라 하트
+      [0,2,'purple'],[0,5,'purple'],
+      [1,2,'purple'],[1,5,'purple'],
+      [2,0,'purple'],[2,3,'purple'],[2,7,'purple'],
+      [3,0,'purple'],[3,3,'purple'],[3,7,'purple'],
+      [4,2,'purple'],[4,5,'purple'],
+      [5,1,'purple'],[5,4,'purple'],[5,6,'purple'],
+    ];
+    for (const [r, c, color] of examples) {
+      if (r < rows && c < cols) cellData[`${r}-${c}`] = color;
+    }
+  }
+
+  setColor('red');
+  placeExampleHearts();
+  renderGrid();
+  createParticles();
+</script>
+</body>
+</html>
